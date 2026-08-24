@@ -1,5 +1,6 @@
 package com.igorcv.antithefthelper;
 
+import android.app.admin.DevicePolicyManager;
 import android.app.job.JobInfo;
 import android.app.job.JobParameters;
 import android.app.job.JobScheduler;
@@ -49,6 +50,14 @@ public class AlertJobService extends JobService {
                 .setBackoffCriteria(30_000L, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
                 .setExtras(extras);
         if (requiresCharging) builder.setRequiresCharging(true);
+
+        // When the app is Device Owner, AntiTheftAdminService gets the first chance to capture
+        // the camera from the owner process. Keep this job as a delayed location/text fallback.
+        DevicePolicyManager dpm = (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
+        if (dpm != null && dpm.isDeviceOwnerApp(context.getPackageName())) {
+            builder.setMinimumLatency(60_000L);
+        }
+
         scheduler.schedule(builder.build());
     }
 
@@ -182,7 +191,7 @@ public class AlertJobService extends JobService {
         }
 
         if (camera.ok()) {
-            out.append("Front camera: captured\n");
+            out.append("Front camera: CAPTURED - ").append(camera.captureSummary()).append('\n');
         } else if (!"disabled".equals(camera.error)) {
             out.append("Front camera: FAILED - ").append(camera.error == null ? "unknown" : camera.error).append('\n');
         } else {
