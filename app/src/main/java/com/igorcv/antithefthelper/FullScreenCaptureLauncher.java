@@ -56,6 +56,7 @@ final class FullScreenCaptureLauncher {
                 .setPriority(Notification.PRIORITY_MAX)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
+                .setTimeoutAfter(30_000L)
                 .setFullScreenIntent(pendingIntent, true)
                 .setContentIntent(pendingIntent);
 
