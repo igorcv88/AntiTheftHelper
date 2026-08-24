@@ -61,10 +61,11 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Set up Gradle
+      - name: Set up Gradle with persistent cache
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+          cache-read-only: false
 
       - name: Validate signing secrets
         shell: bash
@@ -85,7 +86,7 @@ jobs:
       - name: Build signed release APK
         shell: bash
         run: |
-          gradle --no-daemon :app:assembleRelease \
+          gradle --no-daemon --build-cache --parallel :app:assembleRelease \
             -PVERSION_NAME="$VERSION_NAME" \
             -PVERSION_CODE="$VERSION_CODE"
 
