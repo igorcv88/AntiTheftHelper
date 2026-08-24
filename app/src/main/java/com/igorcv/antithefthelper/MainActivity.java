@@ -2,6 +2,10 @@ package com.igorcv.antithefthelper;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.admin.DevicePolicyManager;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -26,6 +30,8 @@ public class MainActivity extends Activity {
     private static final int REQ_LOCATION = 1001;
     private static final int REQ_CAMERA = 1002;
     private static final int REQ_BLUETOOTH = 1003;
+    private static final String DEVICE_OWNER_COMMAND =
+            "adb shell dpm set-device-owner --user 0 com.igorcv.antithefthelper/.AntiTheftAdminReceiver";
 
     private EditText tokenField;
     private EditText chatIdField;
@@ -93,7 +99,7 @@ public class MainActivity extends Activity {
         root.addView(locationCheck);
 
         cameraCheck = new CheckBox(this);
-        cameraCheck.setText("Attempt front camera capture (experimental in BFU)");
+        cameraCheck.setText("Attempt front camera capture (Device Owner recommended for BFU)");
         root.addView(cameraCheck);
 
         TextView wifiLabel = new TextView(this);
@@ -142,6 +148,16 @@ public class MainActivity extends Activity {
         appSettings.setText("Open app settings (Location → Allow all the time; Battery → Unrestricted)");
         appSettings.setOnClickListener(v -> openAppSettings());
         root.addView(appSettings);
+
+        TextView ownerInfo = new TextView(this);
+        ownerInfo.setText("Optional Device Owner mode lets Android keep the DPC process foreground during Direct Boot. It must be provisioned with ADB; the app cannot grant itself Device Owner.");
+        ownerInfo.setPadding(0, dp(14), 0, dp(6));
+        root.addView(ownerInfo);
+
+        Button copyOwner = new Button(this);
+        copyOwner.setText("Copy Device Owner ADB command");
+        copyOwner.setOnClickListener(v -> copyDeviceOwnerCommand());
+        root.addView(copyOwner);
 
         Button test = new Button(this);
         test.setText("Test Telegram + location + front camera now");
@@ -214,6 +230,14 @@ public class MainActivity extends Activity {
         startActivity(intent);
     }
 
+    private void copyDeviceOwnerCommand() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard != null) {
+            clipboard.setPrimaryClip(ClipData.newPlainText("AntiTheftHelper Device Owner", DEVICE_OWNER_COMMAND));
+            Toast.makeText(this, "Device Owner command copied", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void evaluateEnvironment() {
         saveConfig();
         TrustedEnvironment.Result env = TrustedEnvironment.evaluate(this, config);
@@ -221,7 +245,8 @@ public class MainActivity extends Activity {
                 + "\nReason: " + env.reason
                 + "\nWi-Fi: " + (env.wifiSsid == null ? "unknown/not connected" : env.wifiSsid)
                 + "\nBluetooth: " + (env.bluetoothDevices.isEmpty() ? "none detected" : String.join(", ", env.bluetoothDevices))
-                + "\nBluetooth diagnostic: " + env.bluetoothDiagnostic);
+                + "\nBluetooth diagnostic: " + env.bluetoothDiagnostic
+                + "\nDevice Owner: " + (isDeviceOwner() ? "ACTIVE" : "NOT ACTIVE"));
     }
 
     private void sendTest() {
@@ -241,8 +266,11 @@ public class MainActivity extends Activity {
             LocationHelper.Snapshot location = config.includeLocation() ? LocationHelper.getBest(this) : null;
 
             StringBuilder text = new StringBuilder("✅ AntiTheftHelper foreground test\n");
+            text.append("Device Owner: ").append(isDeviceOwner() ? "YES" : "NO").append('\n');
             text.append("Trusted environment: ").append(env.trusted ? "YES - " : "NO - ").append(env.reason).append('\n');
-            text.append("Camera: ").append(camera.ok() ? "CAPTURED" : "FAILED - " + camera.error).append('\n');
+            text.append("Camera: ").append(camera.ok()
+                    ? "CAPTURED - " + camera.captureSummary()
+                    : "FAILED - " + camera.error).append('\n');
             if (location != null) {
                 text.append(String.format(java.util.Locale.US,
                         "Location: %.6f, %.6f (%.0f m)\nhttps://maps.google.com/?q=%.6f,%.6f",
@@ -275,6 +303,11 @@ public class MainActivity extends Activity {
         });
     }
 
+    private boolean isDeviceOwner() {
+        DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(Context.DEVICE_POLICY_SERVICE);
+        return dpm != null && dpm.isDeviceOwnerApp(getPackageName());
+    }
+
     private void refreshStatus() {
         boolean fine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
         boolean background = Build.VERSION.SDK_INT < 29
@@ -284,12 +317,14 @@ public class MainActivity extends Activity {
                 || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
 
         status.setText("Configured: " + (config.isConfigured() ? "YES" : "NO")
+                + "\nDevice Owner: " + (isDeviceOwner() ? "ACTIVE" : "NOT ACTIVE")
                 + "\nFine location: " + (fine ? "GRANTED" : "NOT GRANTED")
                 + "\nBackground location: " + (background ? "GRANTED" : "NOT GRANTED")
                 + "\nCamera: " + (camera ? "GRANTED" : "NOT GRANTED")
                 + "\nNearby devices/Bluetooth: " + (bluetooth ? "GRANTED" : "NOT GRANTED")
                 + "\nPackage: " + getPackageName()
-                + "\n\nBFU test: reboot, do NOT enter the PIN, and watch the bot from another device. Boot is now an independent trigger; charging is a second trigger, not a prerequisite.");
+                + "\n\nDevice Owner command:\n" + DEVICE_OWNER_COMMAND
+                + "\n\nBFU test: reboot, do NOT enter the PIN, and watch the bot from another device. Boot is independent; charging is a second trigger.");
     }
 
     private int dp(int value) {
