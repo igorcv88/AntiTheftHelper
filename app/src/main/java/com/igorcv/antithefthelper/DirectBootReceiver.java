@@ -3,8 +3,6 @@ package com.igorcv.antithefthelper;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.os.BatteryManager;
 
 public class DirectBootReceiver extends BroadcastReceiver {
     @Override
@@ -17,29 +15,35 @@ public class DirectBootReceiver extends BroadcastReceiver {
         if (Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)) {
             if (!config.isConfigured()) return;
 
-            boolean alreadyCharging = isCharging(context);
-            boolean shouldArm = config.alertOnPowerConnected()
-                    || (config.alertOnLockedBoot() && alreadyCharging);
+            if (config.alertOnLockedBoot()) {
+                // Boot itself is an alert trigger. Charging is NOT required.
+                AlertJobService.scheduleBoot(context);
+            }
+            if (config.alertOnPowerConnected()) {
+                // One-shot BFU job that waits for the first charging state after this reboot.
+                AlertJobService.schedulePower(context);
+            }
+            return;
+        }
 
-            if (shouldArm) {
-                AlertJobService.schedule(context);
+        if (Intent.ACTION_POWER_CONNECTED.equals(action)) {
+            if (config.isConfigured() && config.alertOnPowerConnected()) {
+                AlertJobService.schedulePower(context);
+            }
+            return;
+        }
+
+        if (Intent.ACTION_POWER_DISCONNECTED.equals(action)) {
+            if (config.isConfigured() && config.alertOnPowerConnected()) {
+                // Re-arm so a later reconnection can become another trigger if Android delivers this broadcast.
+                AlertJobService.schedulePower(context);
             }
             return;
         }
 
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
-            // BOOT_COMPLETED is delivered after the first unlock. The BFU job is no longer needed.
-            AlertJobService.cancel(context);
+            // Normal Tasker/post-unlock workflows can take over after the first unlock.
+            AlertJobService.cancelAll(context);
         }
-    }
-
-    private static boolean isCharging(Context context) {
-        Intent battery = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        if (battery == null) return false;
-        int status = battery.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-        int plugged = battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0);
-        return status == BatteryManager.BATTERY_STATUS_CHARGING
-                || status == BatteryManager.BATTERY_STATUS_FULL
-                || plugged != 0;
     }
 }
