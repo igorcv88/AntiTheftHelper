@@ -1,0 +1,51 @@
+plugins {
+    id 'com.android.application'
+}
+
+def versionNameValue = providers.gradleProperty("VERSION_NAME").orElse("0.1.0").get()
+def versionCodeValue = providers.gradleProperty("VERSION_CODE").orElse("1").get().toInteger()
+def keystorePath = System.getenv("KEYSTORE_PATH")
+
+android {
+    namespace 'com.igorcv.antithefthelper'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.igorcv.antithefthelper'
+        minSdk 26
+        targetSdk 35
+        versionCode versionCodeValue
+        versionName versionNameValue
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePath) {
+                storeFile file(keystorePath)
+                storePassword System.getenv("KEYSTORE_PASSWORD")
+                keyAlias System.getenv("KEY_ALIAS")
+                keyPassword System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (keystorePath) {
+                signingConfig signingConfigs.release
+            }
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
