@@ -51,8 +51,6 @@ public class AlertJobService extends JobService {
                 .setExtras(extras);
         if (requiresCharging) builder.setRequiresCharging(true);
 
-        // When the app is Device Owner, AntiTheftAdminService gets the first chance to capture
-        // the camera from the owner process. Keep this job as a delayed location/text fallback.
         DevicePolicyManager dpm = (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
         if (dpm != null && dpm.isDeviceOwnerApp(context.getPackageName())) {
             builder.setMinimumLatency(60_000L);
@@ -115,8 +113,13 @@ public class AlertJobService extends JobService {
                     : new CameraHelper.Result(null, "disabled");
             if (camera.ok()) photo = camera.file;
 
+            boolean fullScreenFallbackRequested = false;
+            if (config.includeCamera() && !camera.ok()) {
+                fullScreenFallbackRequested = FullScreenCaptureLauncher.launch(this, trigger, camera.error);
+            }
+
             LocationHelper.Snapshot location = config.includeLocation() ? LocationHelper.getBest(this) : null;
-            String message = buildMessage(trigger, location, environment, camera);
+            String message = buildMessage(trigger, location, environment, camera, fullScreenFallbackRequested);
 
             TelegramClient.Result send;
             if (photo != null) {
@@ -164,7 +167,8 @@ public class AlertJobService extends JobService {
     private String buildMessage(String trigger,
                                 LocationHelper.Snapshot location,
                                 TrustedEnvironment.Result environment,
-                                CameraHelper.Result camera) {
+                                CameraHelper.Result camera,
+                                boolean fullScreenFallbackRequested) {
         Intent battery = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         int level = -1;
         int scale = 100;
@@ -194,6 +198,9 @@ public class AlertJobService extends JobService {
             out.append("Front camera: CAPTURED - ").append(camera.captureSummary()).append('\n');
         } else if (!"disabled".equals(camera.error)) {
             out.append("Front camera: FAILED - ").append(camera.error == null ? "unknown" : camera.error).append('\n');
+            out.append("Full-screen camera fallback: ")
+                    .append(fullScreenFallbackRequested ? "REQUESTED" : "UNAVAILABLE / NOT GRANTED")
+                    .append('\n');
         } else {
             out.append("Front camera: disabled\n");
         }
