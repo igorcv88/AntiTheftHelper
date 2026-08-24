@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 108 108" role="img" aria-label="AntiTheftHelper icon">
+  <rect width="108" height="108" rx="24" fill="#0F172A"/>
+  <path d="M54 16 82 26v23c0 19-12 34-28 43-16-9-28-24-28-43V26Z" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path fill="#fff" fill-rule="evenodd" d="M54 31c-10.5 0-18 7.6-18 18 0 12.7 18 28 18 28s18-15.3 18-28c0-10.4-7.5-18-18-18Zm0 9a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z"/>
+</svg>
