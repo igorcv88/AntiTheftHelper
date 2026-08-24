@@ -102,15 +102,6 @@ jobs:
           echo "apk=$OUT" >> "$GITHUB_OUTPUT"
           echo "checksum=${OUT}.sha256" >> "$GITHUB_OUTPUT"
 
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: AntiTheftHelper-${{ inputs.tag_name }}
-          path: |
-            ${{ steps.files.outputs.apk }}
-            ${{ steps.files.outputs.checksum }}
-          if-no-files-found: error
-
       - name: Publish GitHub Release
         shell: bash
         run: |
