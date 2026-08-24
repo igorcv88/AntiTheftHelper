@@ -11,6 +11,7 @@ import android.os.CancellationSignal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -91,8 +92,9 @@ final class LocationHelper {
         AtomicReference<Location> result = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
         CancellationSignal cancellation = new CancellationSignal();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
-            lm.getCurrentLocation(provider, cancellation, Executors.newSingleThreadExecutor(), location -> {
+            lm.getCurrentLocation(provider, cancellation, executor, location -> {
                 result.set(location);
                 latch.countDown();
             });
@@ -100,6 +102,7 @@ final class LocationHelper {
         } catch (Exception ignored) {
         } finally {
             cancellation.cancel();
+            executor.shutdownNow();
         }
         return result.get();
     }
