@@ -35,7 +35,7 @@ jobs:
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
       KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-      KEYSTORE_PATH: ${{ runner.temp }}/antitheft-release.keystore
+      KEYSTORE_PATH: /tmp/antitheft-release.keystore
       VERSION_NAME: ${{ inputs.version_name }}
       VERSION_CODE: ${{ inputs.version_code }}
       TAG_NAME: ${{ inputs.tag_name }}
@@ -94,7 +94,7 @@ jobs:
         shell: bash
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
-          test -f "$APK" || { echo "Signed APK not found at $APK"; find app/build/outputs -type f -maxdepth 6 || true; exit 1; }
+          test -f "$APK" || { echo "Signed APK not found at $APK"; find app/build/outputs -maxdepth 6 -type f || true; exit 1; }
           OUT="AntiTheftHelper-${TAG_NAME}.apk"
           cp "$APK" "$OUT"
           sha256sum "$OUT" > "${OUT}.sha256"
