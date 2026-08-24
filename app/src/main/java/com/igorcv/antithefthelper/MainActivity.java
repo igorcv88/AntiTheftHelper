@@ -30,6 +30,7 @@ public class MainActivity extends Activity {
     private static final int REQ_LOCATION = 1001;
     private static final int REQ_CAMERA = 1002;
     private static final int REQ_BLUETOOTH = 1003;
+    private static final int REQ_NOTIFICATIONS = 1004;
     private static final String DEVICE_OWNER_COMMAND =
             "adb shell dpm set-device-owner --user 0 com.igorcv.antithefthelper/.AntiTheftAdminReceiver";
 
@@ -99,7 +100,7 @@ public class MainActivity extends Activity {
         root.addView(locationCheck);
 
         cameraCheck = new CheckBox(this);
-        cameraCheck.setText("Attempt front camera capture (Device Owner recommended for BFU)");
+        cameraCheck.setText("Attempt front camera capture (visible lock-screen fallback if background capture is denied)");
         root.addView(cameraCheck);
 
         TextView wifiLabel = new TextView(this);
@@ -144,14 +145,29 @@ public class MainActivity extends Activity {
         requestBluetooth.setOnClickListener(v -> requestBluetoothPermission());
         root.addView(requestBluetooth);
 
+        Button requestNotifications = new Button(this);
+        requestNotifications.setText("Grant notifications permission");
+        requestNotifications.setOnClickListener(v -> requestNotificationsPermission());
+        root.addView(requestNotifications);
+
+        Button fullScreenAccess = new Button(this);
+        fullScreenAccess.setText("Grant full-screen camera fallback access");
+        fullScreenAccess.setOnClickListener(v -> openFullScreenIntentSettings());
+        root.addView(fullScreenAccess);
+
         Button appSettings = new Button(this);
         appSettings.setText("Open app settings (Location → Allow all the time; Battery → Unrestricted)");
         appSettings.setOnClickListener(v -> openAppSettings());
         root.addView(appSettings);
 
+        TextView fallbackInfo = new TextView(this);
+        fallbackInfo.setText("BFU camera path: first try Camera2 directly. If Android rejects background camera access, the app posts a high-priority full-screen notification that opens a visible lock-screen activity, then retries Camera2 while the activity is foreground.");
+        fallbackInfo.setPadding(0, dp(14), 0, dp(6));
+        root.addView(fallbackInfo);
+
         TextView ownerInfo = new TextView(this);
-        ownerInfo.setText("Optional Device Owner mode lets Android keep the DPC process foreground during Direct Boot. It must be provisioned with ADB; the app cannot grant itself Device Owner.");
-        ownerInfo.setPadding(0, dp(14), 0, dp(6));
+        ownerInfo.setText("Device Owner support remains optional/experimental. The full-screen lock-screen fallback does not require Device Owner.");
+        ownerInfo.setPadding(0, dp(10), 0, dp(6));
         root.addView(ownerInfo);
 
         Button copyOwner = new Button(this);
@@ -224,6 +240,28 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void requestNotificationsPermission() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+        } else {
+            Toast.makeText(this, "Notification runtime permission is not required on this Android version", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void openFullScreenIntentSettings() {
+        if (Build.VERSION.SDK_INT < 34) {
+            Toast.makeText(this, "Full-screen intent special access is not required on this Android version", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (Exception e) {
+            openAppSettings();
+        }
+    }
+
     private void openAppSettings() {
         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
         intent.setData(Uri.parse("package:" + getPackageName()));
@@ -246,7 +284,8 @@ public class MainActivity extends Activity {
                 + "\nWi-Fi: " + (env.wifiSsid == null ? "unknown/not connected" : env.wifiSsid)
                 + "\nBluetooth: " + (env.bluetoothDevices.isEmpty() ? "none detected" : String.join(", ", env.bluetoothDevices))
                 + "\nBluetooth diagnostic: " + env.bluetoothDiagnostic
-                + "\nDevice Owner: " + (isDeviceOwner() ? "ACTIVE" : "NOT ACTIVE"));
+                + "\nDevice Owner: " + (isDeviceOwner() ? "ACTIVE" : "NOT ACTIVE")
+                + "\nFull-screen fallback: " + (FullScreenCaptureLauncher.hasFullScreenIntentAccess(this) ? "GRANTED" : "NOT GRANTED"));
     }
 
     private void sendTest() {
@@ -315,6 +354,9 @@ public class MainActivity extends Activity {
         boolean camera = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
         boolean bluetooth = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
                 || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
+        boolean notifications = Build.VERSION.SDK_INT < 33
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        boolean fullScreen = FullScreenCaptureLauncher.hasFullScreenIntentAccess(this);
 
         status.setText("Configured: " + (config.isConfigured() ? "YES" : "NO")
                 + "\nDevice Owner: " + (isDeviceOwner() ? "ACTIVE" : "NOT ACTIVE")
@@ -322,9 +364,11 @@ public class MainActivity extends Activity {
                 + "\nBackground location: " + (background ? "GRANTED" : "NOT GRANTED")
                 + "\nCamera: " + (camera ? "GRANTED" : "NOT GRANTED")
                 + "\nNearby devices/Bluetooth: " + (bluetooth ? "GRANTED" : "NOT GRANTED")
+                + "\nNotifications: " + (notifications ? "GRANTED" : "NOT GRANTED")
+                + "\nFull-screen camera fallback: " + (fullScreen ? "GRANTED" : "NOT GRANTED")
                 + "\nPackage: " + getPackageName()
                 + "\n\nDevice Owner command:\n" + DEVICE_OWNER_COMMAND
-                + "\n\nBFU test: reboot, do NOT enter the PIN, and watch the bot from another device. Boot is independent; charging is a second trigger.");
+                + "\n\nBFU test: grant notifications + full-screen access first, reboot, do NOT enter the PIN, and watch the bot from another device. If direct Camera2 is denied, the visible lock-screen activity should retry the camera.");
     }
 
     private int dp(int value) {
