@@ -10,18 +10,18 @@
   <img alt="Target SDK 35" src="https://img.shields.io/badge/targetSdk-35-3DDC84">
   <img alt="Java 17" src="https://img.shields.io/badge/Java-17-E76F00?logo=openjdk&logoColor=white">
   <img alt="Direct Boot" src="https://img.shields.io/badge/Direct%20Boot-BFU-2563EB">
-  <img alt="Device Owner optional" src="https://img.shields.io/badge/Device%20Owner-optional-7C3AED">
+  <img alt="Lock-screen fallback" src="https://img.shields.io/badge/camera-lock--screen%20fallback-2563EB">
   <img alt="Tasker independent" src="https://img.shields.io/badge/Tasker-not%20required-64748B">
   <img alt="Root not required" src="https://img.shields.io/badge/root-not%20required-64748B">
 </p>
 
 Android anti-theft helper focused on **Before First Unlock (BFU)**: the period after a reboot while the phone is still waiting for the first PIN/password unlock.
 
-The BFU path is independent of Tasker and root. The app uses `directBootAware` components, stores runtime configuration in **Device Protected Storage**, evaluates trusted Wi-Fi/Bluetooth rules, obtains location, captures the front camera when Android permits it, and sends directly through the Telegram Bot API.
+The BFU path is independent of Tasker and root. The app uses `directBootAware` components, stores runtime configuration in **Device Protected Storage**, evaluates trusted Wi-Fi/Bluetooth rules, obtains location, tries Camera2 directly, and can fall back to a visible full-screen lock-screen activity when Android rejects background camera access. Alerts are sent directly through the Telegram Bot API.
 
 ## Why this is independent of Tasker
 
-Tasker remains useful after the first unlock, but on the target Galaxy/One UI build its normal boot task was experimentally confirmed to start only after the first PIN unlock. Making the helper dependent on Tasker would put the BFU path behind that same limitation.
+Tasker remains useful after the first unlock, but on the target Galaxy/One UI build its normal boot task was experimentally confirmed to start only after the first PIN unlock.
 
 ```text
 Before first unlock -> AntiTheftHelper runs independently
@@ -56,7 +56,7 @@ Before first unlock: YES
 Charging: YES
 ```
 
-A duplicate cooldown prevents boot and charging events from producing two nearly simultaneous messages.
+A duplicate cooldown prevents boot and charging events from producing two nearly simultaneous base alerts.
 
 ## Trusted environment suppression
 
@@ -97,9 +97,7 @@ The Telegram alert is still sent if location is unavailable.
 
 ## Camera quality and field of view
 
-Camera capture now prioritizes image quality and field of view instead of the previous ~1280x960 target.
-
-The Camera2 path now:
+The Camera2 path:
 
 - selects the front-facing camera with the widest reported field of view;
 - requests the **largest available JPEG resolution**;
@@ -107,73 +105,76 @@ The Camera2 path now:
 - enables automatic exposure/white balance and picture autofocus when supported;
 - reads `CONTROL_ZOOM_RATIO_RANGE` and automatically uses the **minimum supported zoom ratio**.
 
-If a front logical camera reports a minimum zoom below `1.0x`, the helper uses it automatically. For example, if the device exposes `0.5x` or `0.8x` on the front camera through Camera2, that value is used. If the front camera reports a minimum of `1.0x`, Android does not expose a wider front-camera view to this app and the helper cannot manufacture a true `0.5x` view.
+If a front logical camera reports a minimum zoom below `1.0x`, the helper uses it automatically. If the front camera reports a minimum of `1.0x`, Android does not expose a wider front-camera view to this app and the helper cannot manufacture a true `0.5x` view.
 
 The Telegram caption reports the captured resolution and requested zoom ratio so device behavior can be verified.
 
-## Optional Device Owner mode for BFU camera access
+## Visible lock-screen camera fallback
 
-Android restricts camera access for ordinary background apps. AntiTheftHelper now implements a minimal Device Policy Controller (DPC) path specifically to improve BFU camera access without root.
+Modern Android treats `CAMERA` as a while-in-use permission, so a Direct-Boot `JobService` can obtain location/network while Camera2 is still rejected because the UID is background.
 
-The app includes:
+AntiTheftHelper now uses this sequence:
 
 ```text
-AntiTheftAdminReceiver
-AntiTheftAdminService
+BFU trigger
+  -> trusted environment check
+  -> direct Camera2 attempt
+      -> success: send photo normally
+      -> failure: send the location/text alert immediately
+                  + post a high-priority full-screen notification
+                  + open CaptureActivity over the lock screen
+                  + retry Camera2 while the activity is visible/foreground
+                  + send the captured photo as a second Telegram message
 ```
 
-`AntiTheftAdminService` is a `DeviceAdminService`. Android keeps this service bound for a Device Owner while the user is running, which gives the DPC process foreground importance. The helper attempts Camera2 directly from this owner process instead of starting a camera foreground service from the boot receiver.
+`CaptureActivity` is `directBootAware`, `showWhenLocked=true`, `turnScreenOn=true`, excluded from Recents and marked `noHistory`. It displays a visible security-check screen while Camera2 is active and closes automatically after the attempt.
 
-This design is intentional because Android 15+ prohibits apps targeting API 35 from launching a `camera` foreground service directly from a `BOOT_COMPLETED` receiver.
+The camera privacy indicator remains controlled by Android. AntiTheftHelper does not attempt to suppress system privacy indicators.
 
-### Provisioning Device Owner
+### Required setup for the fallback
 
-The app cannot make itself Device Owner. Install the signed APK first, then provision it through ADB:
+In addition to Camera permission:
+
+1. Grant **Notifications** permission on Android 13+.
+2. On Android 14+, tap **Grant full-screen camera fallback access** and enable the special full-screen-intent access for AntiTheftHelper.
+3. Confirm the app status shows:
+
+```text
+Notifications: GRANTED
+Full-screen camera fallback: GRANTED
+```
+
+If either permission/access is missing, the normal BFU location/text alert still works and reports:
+
+```text
+Full-screen camera fallback: UNAVAILABLE / NOT GRANTED
+```
+
+If the fallback notification is accepted by Android, the base alert reports:
+
+```text
+Full-screen camera fallback: REQUESTED
+```
+
+and a successful second message contains:
+
+```text
+📷 AntiTheftHelper camera fallback
+Lock-screen activity: VISIBLE
+Camera: CAPTURED - <resolution> @ <zoom>x
+```
+
+## Optional Device Owner mode
+
+The repository still contains `AntiTheftAdminReceiver` and `AntiTheftAdminService` for Device Owner experiments, but Device Owner is no longer required for the primary camera fallback.
+
+Provisioning command:
 
 ```bash
 adb shell dpm set-device-owner --user 0 com.igorcv.antithefthelper/.AntiTheftAdminReceiver
 ```
 
-The app has a **Copy Device Owner ADB command** button and displays the current status as `ACTIVE` or `NOT ACTIVE`.
-
-Verify with:
-
-```bash
-adb shell dpm list-owners
-```
-
-and:
-
-```bash
-adb shell dumpsys device_policy | grep -i -E "device.owner|antitheft"
-```
-
-Important: Android's normal `set-device-owner` development flow has provisioning constraints. On an already configured personal phone it can fail because accounts, setup state, users or profiles already exist. Do not factory-reset a primary device merely to satisfy this experiment without first reviewing the exact `dpm` error.
-
-The Device Owner role persists across normal reboots and does not depend on KernelSU/root remaining active.
-
-### Device Owner BFU behavior
-
-When Device Owner is active, the owner service gets the first chance to send:
-
-```text
-Trigger: DEVICE_OWNER_BFU_BOOT
-Device Owner: YES
-Before first unlock: YES
-Front camera: CAPTURED - <resolution> @ <zoom>x
-```
-
-or, for a power trigger:
-
-```text
-Trigger: DEVICE_OWNER_BFU_POWER_CONNECTED
-```
-
-The existing `JobScheduler` path remains as a delayed fallback. When Device Owner is active, fallback jobs are delayed so the owner service gets the first camera attempt; the shared cooldown prevents duplicate successful alerts.
-
-Camera capture before the first PIN is still firmware-dependent. The DPC/Device Owner path makes it substantially more plausible on modern Android, but the Galaxy/One UI result must be tested empirically.
-
-The Android camera privacy indicator may still appear. AntiTheftHelper does not attempt to bypass system privacy indicators.
+On already configured personal devices, Android can reject Device Owner provisioning because setup is complete, accounts exist, or additional managed profiles/users exist. Do not factory-reset a primary device just to enable this optional path without reviewing the exact `dpm` failure first.
 
 ## Telegram setup
 
@@ -191,54 +192,63 @@ The Android camera privacy indicator may still appear. AntiTheftHelper does not 
 7. Enter the token and chat ID.
 8. Configure trusted Wi-Fi/Bluetooth lists.
 9. Grant Location, Camera and Nearby devices/Bluetooth permissions.
-10. Save configuration.
-11. Run the foreground Telegram/camera test.
+10. Grant Notifications permission.
+11. On Android 14+, grant full-screen camera fallback access.
+12. Save configuration.
+13. Run the foreground Telegram/camera test.
 
 The Telegram app does not need to be installed or logged in on the protected phone. AntiTheftHelper calls `api.telegram.org` directly.
 
 Do not commit the bot token to this repository. Runtime configuration is stored in Device Protected Storage.
 
-## Real BFU tests
-
-### Without Device Owner
+## Real BFU test
 
 1. Configure the app while unlocked.
-2. Reboot.
-3. **Do not enter the PIN.**
-4. Leave the phone off the charger initially.
-5. Watch Telegram from another device.
-6. Later connect power to test the charging trigger.
+2. Confirm the foreground camera test works.
+3. Confirm Notifications and Full-screen camera fallback both show `GRANTED`.
+4. Move outside all configured trusted Wi-Fi/Bluetooth criteria.
+5. Reboot.
+6. **Do not enter the PIN.**
+7. Watch Telegram from another device.
 
-The location/text BFU path should remain available even if camera access is denied.
+Expected sequence when direct background Camera2 is denied but the full-screen fallback succeeds:
 
-### With Device Owner
+```text
+Message 1:
+🚨 AntiTheftHelper
+Trigger: BFU_BOOT
+Before first unlock: YES
+Front camera: FAILED - ...
+Full-screen camera fallback: REQUESTED
+Location: ...
 
-1. Confirm the app shows `Device Owner: ACTIVE`.
-2. Confirm foreground camera test works and reports the new full resolution/zoom.
-3. Reboot.
-4. **Do not enter the PIN.**
-5. Move the device outside trusted Wi-Fi/Bluetooth criteria for the test.
-6. Watch Telegram for `DEVICE_OWNER_BFU_BOOT`.
-7. If testing power separately, connect the charger after the cooldown.
+Message 2:
+📷 AntiTheftHelper camera fallback
+Lock-screen activity: VISIBLE
+Camera: CAPTURED - ...
+Location: ...
+```
+
+Later connect power to test the independent charging trigger.
 
 ## ADB diagnostics
 
-Inspect Direct Boot and Device Owner components:
+Inspect Direct Boot and fallback components:
 
 ```bash
-adb shell dumpsys package com.igorcv.antithefthelper | grep -i -E "LOCKED_BOOT_COMPLETED|directBootAware|AntiTheftAdmin|AlertJobService|BluetoothStateReceiver"
-```
-
-Inspect ownership:
-
-```bash
-adb shell dpm list-owners
+adb shell dumpsys package com.igorcv.antithefthelper | grep -i -E "LOCKED_BOOT_COMPLETED|directBootAware|CaptureActivity|AlertJobService|BluetoothStateReceiver"
 ```
 
 Inspect fallback jobs:
 
 ```bash
 adb shell dumpsys jobscheduler | grep -i -A 30 -B 5 "com.igorcv.antithefthelper"
+```
+
+Inspect Camera AppOps when debugging OEM restrictions:
+
+```bash
+adb shell cmd appops get com.igorcv.antithefthelper CAMERA
 ```
 
 ## Building locally
@@ -274,9 +284,15 @@ Configure these Actions secrets:
 - `KEY_ALIAS`
 - `KEY_PASSWORD`
 
-The workflow reconstructs the signing keystore inside the runner, builds the signed APK, creates a SHA-256 checksum, and publishes both directly as **GitHub Release assets**.
+Release versioning is automatic. Running the workflow with **Run workflow** calculates the next release from the latest `vMAJOR.MINOR.0` tag:
 
-It deliberately does **not** use `actions/upload-artifact`, so release builds do not consume GitHub Actions artifact-storage quota.
+```text
+v0.1.0 -> v0.2.0 -> ... -> v0.9.0 -> v1.0.0 -> v1.1.0 -> ...
+```
+
+Android `versionCode` uses the monotonically increasing GitHub Actions run number, so failed builds do not create version-code collisions.
+
+The workflow reconstructs the signing keystore inside the runner, builds the signed APK, creates a SHA-256 checksum, and publishes both directly as **GitHub Release assets**. It deliberately does **not** use `actions/upload-artifact`, so release builds do not consume GitHub Actions artifact-storage quota.
 
 ## Signing key continuity
 
@@ -287,6 +303,8 @@ Android updates must be signed with the same key as the installed APK. Keep the 
 - Treat the Telegram bot token as a password.
 - Device Protected Storage is required for BFU operation, so only the minimum configuration needed before unlock is stored there.
 - Root is not required.
-- Device Owner is optional for location/text and recommended specifically for the experimental BFU camera path.
-- Camera BFU behavior is firmware-dependent and is reported explicitly rather than silently assumed to work.
+- Tasker is not required for the BFU path.
+- Device Owner is optional and experimental.
+- The full-screen camera fallback is deliberately visible and relies on Android's normal notification/full-screen-intent controls.
+- Camera behavior before the first PIN remains firmware-dependent and is reported explicitly.
 - This is a personal sideloaded anti-theft helper, not a replacement for Samsung Find or Google's device-finding services.
