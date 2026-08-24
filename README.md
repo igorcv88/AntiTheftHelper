@@ -1,8 +1,32 @@
-# AntiTheftHelper
+<p align="center">
+  <img src="docs/icon.svg" width="128" height="128" alt="AntiTheftHelper icon">
+</p>
+
+<h1 align="center">AntiTheftHelper</h1>
+
+<p align="center">
+  <a href="https://github.com/igorcv88/AntiTheftHelper/actions/workflows/build-release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/igorcv88/AntiTheftHelper/build-release.yml?branch=main&label=release%20build"></a>
+  <img alt="Android 8.0+" src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white">
+  <img alt="Target SDK 35" src="https://img.shields.io/badge/targetSdk-35-3DDC84">
+  <img alt="Java 17" src="https://img.shields.io/badge/Java-17-E76F00?logo=openjdk&logoColor=white">
+  <img alt="Direct Boot" src="https://img.shields.io/badge/Direct%20Boot-BFU-2563EB">
+  <img alt="Root not required" src="https://img.shields.io/badge/root-not%20required-64748B">
+</p>
 
 Android helper focused on the **Before First Unlock (BFU)** state: the period after a reboot while the phone is still waiting for the first PIN/password unlock.
 
 The app is independent of Tasker and root for the BFU path. It registers a `directBootAware` receiver for `LOCKED_BOOT_COMPLETED`, stores its Telegram configuration in **Device Protected Storage**, and arms a `directBootAware` `JobService` that requires both **charging** and an **available network**. When those constraints are satisfied while the device is still before the first unlock, it attempts to obtain the best available location and sends an alert directly through the Telegram Bot API.
+
+## App icon
+
+The launcher icon is implemented as a native Android **adaptive icon**, with separate layers for:
+
+- opaque background;
+- transparent foreground artwork;
+- round launcher icon;
+- Android 13+ `monochrome` themed-icon layer.
+
+That keeps the icon compatible with launcher masks, Samsung Theme Park, themed icons and tools such as Icon Pack Studio instead of baking everything into a single square bitmap.
 
 ## Current behavior
 
@@ -117,6 +141,8 @@ Unsigned release build if no signing environment is supplied:
 gradle :app:assembleRelease
 ```
 
+Gradle build caching and parallel task execution are enabled in `gradle.properties`, and the GitHub Actions workflow persists the Gradle cache between manual release runs.
+
 ## Signed GitHub Releases
 
 The repository contains a **manual-only** workflow:
@@ -147,11 +173,13 @@ To publish an APK:
 The workflow:
 
 - installs the Android SDK and Gradle;
+- restores/persists the Gradle cache;
 - reconstructs the signing keystore only inside the GitHub runner;
 - builds a signed release APK;
 - creates a SHA-256 checksum;
-- uploads both as a workflow artifact;
-- creates or updates the requested GitHub Release and attaches the APK and checksum.
+- publishes the APK and checksum directly as **GitHub Release assets**.
+
+It deliberately does **not** use `actions/upload-artifact`, so release builds do not consume GitHub Actions artifact-storage quota. The APK exists only as a Release asset after the runner finishes.
 
 Generated filenames are similar to:
 
