@@ -24,19 +24,19 @@ final class BluetoothStateStore {
 
     synchronized void add(String value) {
         if (value == null) return;
-        value = value.trim();
-        if (value.isEmpty()) return;
+        String normalized = value.trim();
+        if (normalized.isEmpty()) return;
         Set<String> values = connected();
-        values.add(value);
+        values.add(normalized);
         prefs.edit().putStringSet(KEY_CONNECTED, values).apply();
     }
 
     synchronized void remove(String value) {
         if (value == null) return;
-        value = value.trim();
-        if (value.isEmpty()) return;
+        String normalized = value.trim();
+        if (normalized.isEmpty()) return;
         Set<String> values = connected();
-        values.removeIf(existing -> existing.equalsIgnoreCase(value));
+        values.removeIf(existing -> existing.equalsIgnoreCase(normalized));
         prefs.edit().putStringSet(KEY_CONNECTED, values).apply();
     }
 
