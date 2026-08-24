@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Single-color layer for Android 13+ themed icons / Theme Park. -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,16 L82,26 L82,49 C82,68 70,83 54,92 C38,83 26,68 26,49 L26,26 Z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M54,31 C43.5,31 36,38.6 36,49 C36,61.7 54,77 54,77 C54,77 72,61.7 72,49 C72,38.6 64.5,31 54,31 Z M54,40 C59,40 63,44 63,49 C63,54 59,58 54,58 C49,58 45,54 45,49 C45,44 49,40 54,40 Z" />
+</vector>
