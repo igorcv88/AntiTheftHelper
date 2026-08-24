@@ -2,20 +2,23 @@
 
 Android helper focused on the **Before First Unlock (BFU)** state: the period after a reboot while the phone is still waiting for the first PIN/password unlock.
 
-The app is intentionally independent of Tasker and root for the BFU path. It registers a `directBootAware` receiver for `LOCKED_BOOT_COMPLETED`, stores its Telegram configuration in **Device Protected Storage**, checks whether the phone is charging, attempts to obtain the best available location, and sends an alert directly through the Telegram Bot API.
+The app is independent of Tasker and root for the BFU path. It registers a `directBootAware` receiver for `LOCKED_BOOT_COMPLETED`, stores its Telegram configuration in **Device Protected Storage**, and arms a `directBootAware` `JobService` that requires both **charging** and an **available network**. When those constraints are satisfied while the device is still before the first unlock, it attempts to obtain the best available location and sends an alert directly through the Telegram Bot API.
 
 ## Current behavior
 
-When configured, the app can trigger on:
+At `LOCKED_BOOT_COMPLETED`:
 
-- `LOCKED_BOOT_COMPLETED`, but only if the phone is charging.
-- `ACTION_POWER_CONNECTED`, including while the device is still in Direct Boot.
-- `BOOT_COMPLETED` as a post-unlock fallback.
-- Internal retry alarms if Telegram cannot be reached immediately after boot.
+- If **Alert on LOCKED_BOOT_COMPLETED when charging** is enabled and the phone is already charging, the BFU alert job is armed.
+- If **Alert when power is connected** is enabled, the BFU alert job is armed even if the phone is not charging yet; Android's `JobScheduler` waits for the charging constraint to become true.
+- The job also waits for any usable network before it runs.
+- If the first Telegram attempt fails, `JobScheduler` requests a retry with exponential backoff.
+- At the first normal `BOOT_COMPLETED` after the user unlocks, the BFU job is cancelled so it does not become a normal post-unlock trigger.
+
+Using a charging-constrained `JobService` is deliberate: modern Android does not reliably deliver `ACTION_POWER_CONNECTED` to manifest-declared receivers in ordinary apps, while a Direct-Boot-aware scheduled job can wait for charging without keeping a process alive.
 
 The Telegram alert includes:
 
-- Whether the device is still before the first unlock.
+- `Before first unlock: YES`.
 - Trigger source.
 - Battery percentage.
 - Network transport when detectable.
@@ -26,9 +29,9 @@ No Telegram app session is required on the protected phone. The helper talks dir
 
 ## Important limitation: camera before the first PIN
 
-This version does **not** attempt a silent front-camera capture in BFU. Modern Android restricts background camera access, and Android 15+ additionally restricts camera foreground services started from boot receivers. Faking camera support here would make the anti-theft path unreliable.
+This version does **not** attempt a silent front-camera capture in BFU. Modern Android restricts background camera access, and Android 15+ additionally restricts camera foreground services started from boot receivers. Camera support needs a separate, device-specific solution rather than pretending a normal background camera call will be reliable.
 
-Tasker can still handle the normal post-unlock path (photo + Telegram + other channels). Camera support for BFU should only be added after a separate, device-specific design is proven to work on the target One UI / Android build.
+Tasker can still handle the normal post-unlock path (photo + Telegram + other channels).
 
 The helper also cannot reliably disable Airplane mode or enable mobile data as an ordinary app. A network connection must become available after boot for Telegram delivery.
 
@@ -36,7 +39,7 @@ The helper also cannot reliably disable Airplane mode or enable mobile data as a
 
 1. Open `@BotFather` in Telegram.
 2. Create a bot with `/newbot`.
-3. Send `/start` to the new bot from the Telegram account that should receive the alerts.
+3. Send `/start` to the new bot from the Telegram account that should receive alerts.
 4. Open:
 
    ```text
@@ -47,7 +50,7 @@ The helper also cannot reliably disable Airplane mode or enable mobile data as a
 6. Install and open AntiTheftHelper.
 7. Enter the bot token and chat ID.
 8. Keep **Alert on LOCKED_BOOT_COMPLETED when charging** enabled.
-9. Keep **Alert when power is connected** enabled.
+9. Keep **Alert when power is connected** enabled if you want the app to wait for a charger that is connected after boot.
 10. Press **Save configuration**.
 11. Press **Send Telegram test now** and verify delivery.
 
@@ -60,9 +63,9 @@ For location to have the best chance of working while the app is in the backgrou
 1. Press **Grant foreground location** in the app and allow precise location.
 2. Press **Open app settings**.
 3. Open **Permissions > Location** and set it to **Allow all the time**, if your firmware exposes that option.
-4. Set the app battery mode to **Unrestricted** on Samsung if available.
+4. Set the app battery mode to **Unrestricted** on Samsung if available. Android can defer `LOCKED_BOOT_COMPLETED` for apps placed in the restricted battery state.
 
-The alert is still sent if location is unavailable.
+The Telegram alert is still sent if location is unavailable.
 
 ## Real BFU test
 
@@ -71,30 +74,28 @@ A normal in-app test does not prove Direct Boot operation. Test the actual targe
 1. Configure the app while the phone is unlocked.
 2. Reboot the phone.
 3. **Do not enter the PIN.**
-4. Leave the phone connected to power, or connect the charger after the lock screen appears.
-5. Watch the Telegram bot from another device.
+4. Either boot with the charger connected or connect it after the lock screen appears.
+5. Wait for network connectivity.
+6. Watch the Telegram bot from another device.
 
 A successful alert should contain:
 
 ```text
 Before first unlock: YES
+Trigger: BFU_CHARGING_JOB
 ```
 
-You can inspect registration with ADB:
+You can inspect the Direct Boot components with ADB:
 
 ```bash
-adb shell dumpsys package com.igorcv.antithefthelper | grep -i -E "LOCKED_BOOT_COMPLETED|directBootAware|RECEIVE_BOOT_COMPLETED"
+adb shell dumpsys package com.igorcv.antithefthelper | grep -i -E "LOCKED_BOOT_COMPLETED|directBootAware|AlertJobService|RECEIVE_BOOT_COMPLETED"
 ```
 
-## Retry behavior
+You can also inspect the scheduled job after reboot, before entering the PIN:
 
-If the first Telegram request fails, the helper schedules retries while the phone remains charging. Current retry delays are approximately:
-
-```text
-30 s, 1 min, 2 min, 5 min, 10 min, 15 min
+```bash
+adb shell dumpsys jobscheduler | grep -i -A 20 -B 5 "com.igorcv.antithefthelper"
 ```
-
-A successful alert starts a short cooldown to avoid duplicate messages from overlapping boot/power broadcasts.
 
 ## Building locally
 
@@ -124,7 +125,7 @@ The repository contains a **manual-only** workflow:
 .github/workflows/build-release.yml
 ```
 
-It has only `workflow_dispatch`; pushing commits does not start a build.
+It has only `workflow_dispatch`; pushing commits does not start a build. Manual runs still consume Actions minutes when the repository/account billing model charges for hosted runners, but no minutes are consumed simply by pushing code.
 
 Configure these repository Actions secrets:
 
@@ -152,7 +153,7 @@ The workflow:
 - uploads both as a workflow artifact;
 - creates or updates the requested GitHub Release and attaches the APK and checksum.
 
-The generated filenames are similar to:
+Generated filenames are similar to:
 
 ```text
 AntiTheftHelper-v0.1.0.apk
@@ -166,7 +167,7 @@ Android updates must be signed with the same key as the installed APK. Keep the 
 ## Security notes
 
 - Treat the Telegram bot token as a password. Anyone who obtains it can call that bot's API.
-- Device Protected Storage is necessary for BFU access, but it should contain only the minimum data required for Direct Boot operation.
-- Root is not required by this project.
+- Device Protected Storage is necessary for BFU access. This app stores only the configuration required for the Direct Boot alert there.
+- Root is not required.
 - Device Owner is not required by this version.
 - This is a sideloaded personal anti-theft helper, not a replacement for Samsung Find / Google's device-finding features.
