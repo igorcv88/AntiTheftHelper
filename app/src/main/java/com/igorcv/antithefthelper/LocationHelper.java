@@ -80,8 +80,9 @@ final class LocationHelper {
         return best;
     }
 
-    // getBest() checks coarse/fine permission; the location call also catches revocation.
+    // getBest() calls this only on API 30+ and with location permission checked.
     @SuppressLint("MissingPermission")
+    @android.annotation.TargetApi(Build.VERSION_CODES.R)
     private static Location currentLocation(LocationManager lm) {
         String provider = null;
         try {
