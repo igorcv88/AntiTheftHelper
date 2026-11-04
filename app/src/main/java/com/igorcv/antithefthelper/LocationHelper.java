@@ -1,6 +1,7 @@
 package com.igorcv.antithefthelper;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.location.Location;
@@ -57,6 +58,8 @@ final class LocationHelper {
         return best == null ? null : new Snapshot(best);
     }
 
+    // getBest() checks coarse/fine permission; the location call also catches revocation.
+    @SuppressLint("MissingPermission")
     private static Location bestLastKnown(LocationManager lm) {
         Location best = null;
         List<String> providers = new ArrayList<>();
@@ -77,6 +80,8 @@ final class LocationHelper {
         return best;
     }
 
+    // getBest() checks coarse/fine permission; the location call also catches revocation.
+    @SuppressLint("MissingPermission")
     private static Location currentLocation(LocationManager lm) {
         String provider = null;
         try {
