@@ -99,6 +99,8 @@ final class LocationHelper {
                 latch.countDown();
             });
             latch.await(3500, TimeUnit.MILLISECONDS);
+        } catch (SecurityException ignored) {
+            // Location permission can be revoked between the caller's check and this request.
         } catch (Exception ignored) {
         } finally {
             cancellation.cancel();
